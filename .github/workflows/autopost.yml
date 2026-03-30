@@ -1,0 +1,75 @@
+##############################################################################
+# Chaturbate → Bluesky Autopost Bot
+#
+# Runs TWICE per hour at randomised offsets so posts never land at the same
+# time every hour. The script itself also adds a random internal delay when
+# POST_COUNT > 1.
+#
+# Schedule: two cron entries offset by 27–33 minutes apart
+#   • :07 past the hour  (randomised inside the script by ±0–8 min sleep)
+#   • :37 past the hour  (randomised inside the script by ±0–8 min sleep)
+#
+# Required GitHub Secrets (Settings → Secrets and variables → Actions):
+#   BSKY_HANDLE        – your Bluesky handle  (e.g. cam-whores.bsky.social)
+#   BSKY_APP_PASSWORD  – your Bluesky App Password
+#
+# Required GitHub Variables (Settings → Secrets and variables → Actions → Variables):
+#   CB_TAGS  – comma-separated Chaturbate tags, e.g. "bigass,latina,milf,lovense"
+#
+##############################################################################
+
+name: Chaturbate Bluesky Autopost
+
+on:
+  schedule:
+    # First post window: 7 minutes past every hour  (UTC)
+    - cron: "9 * * * *"
+    # Second post window: 37 minutes past every hour (UTC)
+    - cron: "17 * * * *"
+
+
+jobs:
+  autopost:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      # ── Randomise start time so posts don't land on the exact minute ────
+      - name: Random delay (0–8 minutes)
+        run: |
+          DELAY=$((RANDOM % 480))
+          echo "Sleeping ${DELAY}s before posting…"
+          sleep "$DELAY"
+
+      # ── Checkout repo ────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Setup Node.js ────────────────────────────────────────────────────
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      # ── Install pnpm ─────────────────────────────────────────────────────
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      # ── Install dependencies ─────────────────────────────────────────────
+      - name: Install dependencies
+        run: pnpm --filter @workspace/scripts install --frozen-lockfile
+
+      # ── Run the bot ──────────────────────────────────────────────────────
+      - name: Post to Bluesky
+        env:
+          BSKY_HANDLE: ${{ secrets.BSKY_HANDLE }}
+          BSKY_APP_PASSWORD: ${{ secrets.BSKY_APP_PASSWORD }}
+          CB_TAGS: ${{ vars.CB_TAGS || 'bigass,latina,milf,lovense,teen' }}
+          CB_WM: ${{ vars.CB_WM || 'T2CSW' }}
+          CB_MIN_VIEWERS: ${{ vars.CB_MIN_VIEWERS || '30' }}
+          POST_COUNT: "1"
+        run: pnpm --filter @workspace/scripts run bot
